@@ -19,12 +19,7 @@ wss.on('connection', async (ws) => {
       console.log('Received backtesting configuration:', config);
       
       // Extract configuration parameters
-      const { 
-        startDate, 
-        endDate, 
-        speed = 1, // Replay speed multiplier (1 = real-time, 2 = 2x speed, etc.)
-        symbol = 'btcusdt' // Default symbol
-      } = config;
+      const { startDate, endDate } = config;
       
       // Validate configuration
       if (!startDate || !endDate) {
@@ -33,7 +28,7 @@ wss.on('connection', async (ws) => {
       }
       
       // Start the backtesting session
-      await streamHistoricalData(ws, startDate, endDate, speed, symbol);
+      await streamHistoricalData(ws, startDate, endDate);
       
     } catch (error) {
       console.error('Error processing client message:', error);
@@ -55,7 +50,7 @@ wss.on('connection', async (ws) => {
 });
 
 // Function to stream historical orderbook data to client
-async function streamHistoricalData(ws, startDate, endDate, speed, symbol) {
+async function streamHistoricalData(ws, startDate, endDate) {
   try {
     // Connect to database (if not already connected)
     await connectDb();
@@ -92,27 +87,9 @@ async function streamHistoricalData(ws, startDate, endDate, speed, symbol) {
       endTime: endTimestamp
     }));
     
-    // Process and send each snapshot with appropriate timing
-    let previousTime = null;
-    
+    // Process and send each snapshot at 1 per second
     for (let i = 0; i < result.rows.length; i++) {
       const snapshot = result.rows[i];
-      const currentTime = new Date(snapshot.timestamp);
-      
-      // Calculate delay for realistic replay
-      let delayMs = 0;
-      if (previousTime) {
-        // Original time difference between snapshots
-        const timeDiff = currentTime - previousTime;
-        // Adjusted for speed factor
-        delayMs = Math.max(0, timeDiff / speed);
-      }
-      previousTime = currentTime;
-      
-      // Wait for the calculated delay
-      if (delayMs > 0) {
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-      }
       
       // Check if client is still connected
       if (ws.readyState !== WebSocket.OPEN) {
@@ -127,6 +104,9 @@ async function streamHistoricalData(ws, startDate, endDate, speed, symbol) {
         asks: snapshot.asks,  
         progress: `${i + 1}/${result.rows.length}`
       }));
+      
+      // Wait 1 second before sending the next snapshot
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
     // Send completion message
