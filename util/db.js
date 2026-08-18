@@ -1,15 +1,21 @@
 require('dotenv').config();  // Load environment variables from .env file
-const { Client } = require('pg');
+const { Pool } = require('pg');
 
-// PostgreSQL client setup using the DATABASE_URL from the .env file
-const db = new Client({
-  connectionString: process.env.DATABASE_URL,  // Use the DATABASE_URL environment variable
+// A Pool, not a single Client: the backtest server handles concurrent
+// WebSocket sessions, and a shared Client crashes the moment a second
+// connection calls connect() on it. The pool hands each query a free
+// connection and manages lifecycles itself — connectDb() is kept only as a
+// startup ping so misconfiguration fails loudly at boot instead of on the
+// first client.
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 5,
 });
 
-// Connect to DB
 async function connectDb() {
   try {
-    await db.connect();
+    const client = await pool.connect();
+    client.release();
     console.log('Connected to TimescaleDB');
   } catch (err) {
     console.error('Error connecting to TimescaleDB:', err);
@@ -20,18 +26,16 @@ async function connectDb() {
 // Utility function to execute queries (for INSERT, SELECT, UPDATE, DELETE)
 async function queryDb(query, values = []) {
   try {
-    const result = await db.query(query, values);
-    return result;
+    return await pool.query(query, values);
   } catch (err) {
     console.error('Error executing query:', err);
     throw err;
   }
 }
 
-// Utility function to close the DB connection (when you're done)
 async function closeDb() {
   try {
-    await db.end();
+    await pool.end();
     console.log('Disconnected from TimescaleDB');
   } catch (err) {
     console.error('Error closing connection:', err);
